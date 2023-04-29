@@ -108,6 +108,44 @@ struct Conn {
     uint8_t wbuf[4 + k_max_msg];
 };
 
+static void conn_put(vector<Conn *> &fd2conn, struct Conn *conn){
+    if(fd2conn.size() <= (size_t)conn -> fd){
+        fd2conn.resize(conn->fd + 1);
+    }
+    fd2conn[conn -> fd] = conn;
+}
+
+static int32_t accept_new_conn(vector<Conn *> &fd2conn, int fd)
+{
+    // accept
+    struct sockaddr_in client_addr = {};
+    socklen_t socklen = sizeof(client_addr);
+    int connfd = accept(fd, (struct sockaddr *)&client_addr, &socklen);
+    if(connfd < 0){
+        msg("accept() error");
+        return -1; // error
+    }
+
+    // set the new connection fd to nonblocking mode
+    fd_set_nb(connfd);
+    // creating the struct Conn
+    struct Conn *conn = (struct Conn *)malloc(sizeof(struct Conn));
+
+    if(!conn){
+        close(connfd);
+        return -1;
+    }
+
+    conn -> fd = connfd;
+    conn -> state = STATE_REQ;
+    conn -> rbuf_size = 0;
+    conn -> wbuf_size = 0;
+    conn -> wbuf_sent = 0;
+    conn_put(fd2conn, conn);
+    return 0;
+}
+
+
 static int32_t one_request(int connfd){
     // 4 bytes header
     char rbuf[4 + k_max_msg + 1];
