@@ -311,28 +311,63 @@ int main()
         die("listen()");
     }
 
-    while(true){
-        // accept
-        struct sockaddr_in client_addr = {};
-        socklen_t socklen = sizeof(client_addr);
 
-        int connfd = accept(fd, (struct sockaddr *)&client_addr, &socklen);
-        if(connfd < 0){
-            continue; //error
-        }
+    //  a map of all client connections, keyed by fd
+    vector<Conn *> fd2conn;
+    
+    // set the listen fd to nonblocking mode
+    fd_set_nb(fd);
 
-        while (true)
-        {
-            // here the server only serves one client connections at once
-            int32_t err = one_request(connfd);
-            if(err){
-                break;
+    // the event loop
+    vector<struct pollfd> poll_args;
+
+    while (true)
+    {
+        // preoare the argumenst of the poll()
+        poll_args.clear();
+        // for convinience, the listening fd is put in the first position
+
+        struct pollfd pfd = {fd, POLLIN, 0};
+        poll_args.push_back(pfd);
+        // connection fds
+        for(Conn *conn : fd2conn) {
+            if(!conn){
+                continue;
             }
-
+            struct pollfd pfd = {};
+            pfd.fd = conn ->fd;
+            pfd.events = (conn->state == STATE_REQ) ? POLLIN : POLLOUT;
+            pfd.events = pfd.events | POLLERR;
+            poll_args.push_back(pfd);
         }
 
-        close(connfd); 
-    }
+        // poll for active fds
+        // the timeout argument doestn't matter here
 
+        int rv = poll(poll_args.data(), (nfds_t)poll_args.size(), 1000);
+        if(rv < 0){
+            die("poll");
+        } 
+
+        // process active connections
+        for(size_t i = 1; i < poll_args.size(); ++i){
+            if(poll_args[i].revents){
+                Conn *conn = fd2conn[poll_args[i].fd];
+                connection_io(conn);
+                if(conn -> state == STATE_END){
+                    // clien closed normally, or something bad happened.
+                    // destroy this connection 
+                    fd2conn[conn->fd] = NULL;
+                    (void)close(conn ->fd);
+                    free(conn);
+                }
+            }
+        }
+        // try to accept a new connection if the listenning fd is active
+        if(poll_args[0].revents){
+            (void)accept_new_conn(fd2conn, fd);
+        }
+    }
+    
     return 0;
 }
