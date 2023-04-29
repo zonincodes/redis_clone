@@ -11,6 +11,10 @@
 #include <vector>
 #include <fcntl.h>
 #include <poll.h>
+#include <string>
+#include <map>
+using std::map;
+using std::string;
 using std::vector;
 
 static void msg(const char *msg)
@@ -163,6 +167,81 @@ static int32_t accept_new_conn(vector<Conn *> &fd2conn, int fd)
 
 static void state_req(Conn *conn);
 static void state_res(Conn *conn);
+
+const size_t k_max_args = 1024;
+
+static int32_t parse_req(const uint8_t *data, size_t len, vector<string> &out)
+{
+    if (len < 4)
+    {
+        return -1;
+    }
+
+    uint32_t n = 0;
+    memcpy(&n, &data[0], 4);
+    if (n > k_max_args)
+    {
+        return -1;
+    }
+
+    size_t pos = 4;
+    while (n--)
+    {
+        if (pos + 4 > len)
+        {
+            return -1;
+        }
+
+        uint32_t sz = 0;
+        memcpy(&sz, &data[pos], 4);
+        if (pos + 4 + sz > len)
+        {
+            return -1;
+        }
+        out.push_back(string((char *)&data[pos + 4], sz));
+        pos += 4 + sz;
+    }
+
+    if (pos != len)
+    {
+        return -1; // trailling garbage
+    }
+    return 0;
+}
+
+enum
+{
+    RES_OK = 0,
+    RES_ERR = 1,
+    RES_NX = 2,
+};
+
+// the data structure for the key space. This is just a placeholder
+static map<string, string> g_map;
+
+static uint32_t do_get(
+    const vector<string> &cmd, uint8_t *res, uint32_t *reslen)
+{
+    if(!g_map.count(cmd[1])){
+        return RES_NX;
+    }
+
+    string &val = g_map[cmd[1]];
+    assert(val.size() <= k_max_msg);
+    memcpy(res, val.data(), val.size());
+    *reslen = (uint32_t)val.size();
+    return RES_OK;
+}
+
+static uint32_t do_set(const vector<string> &cmd, uint8_t *res, uint32_t *reslen)
+{
+    (void)res;
+    (void)reslen;
+    g_map[cmd[1]] = cmd[2];
+    return RES_OK;
+}
+
+
 
 static bool try_one_request(Conn *conn)
 {
