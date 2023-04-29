@@ -267,7 +267,7 @@ static int32_t do_request(const uint8_t *req, uint32_t reqlen, uint32_t *rescode
         *rescode = do_get(cmd, res, reslen);
     } else if( cmd.size() == 3 && cmd_is(cmd[0], "set")){
         *rescode = do_set(cmd, res, reslen);
-    } else if(cmd.size() == 2 && cmd_is(mcmd[0], "del")){
+    } else if(cmd.size() == 2 && cmd_is(cmd[0], "del")){
         *rescode = do_del(cmd, res, reslen);
     } else {
         // command [cmd] not recognized
@@ -304,13 +304,18 @@ static bool try_one_request(Conn *conn)
         return false;
     }
 
-    // got one request, do something with it
-    printf("Client says: %.*s\n", len, &conn->rbuf[4]);
-
-    // generating echoing response
-    memcpy(&conn->wbuf[0], &len, 4);
-    memcpy(&conn->wbuf[4], &conn->rbuf[4], len);
-    conn->wbuf_size = 4 + len;
+    // got one request, generate the response
+    uint32_t rescode = 0;
+    uint32_t wlen = 0;
+    int32_t err = do_request(&conn -> rbuf[4], len, &rescode, &conn -> wbuf[4+4], &wlen);
+    if(err){
+        conn->state = STATE_END;
+        return false;
+    }
+    wlen += 4;
+    memcpy(&conn -> wbuf[0], &wlen, 4);
+    memcpy(&conn->wbuf[4], &rescode, 4);
+    conn -> wbuf_size = 4 + wlen;
 
     // remove the request from the buffer.
     // note: frequent memmove is ineffiecient.
