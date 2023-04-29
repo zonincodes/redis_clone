@@ -188,7 +188,7 @@ static bool try_one_request(Conn *conn)
         return false;
     }
 
-    // got onr request, do something with it
+    // got one request, do something with it
     printf("Client says: %.*s\n", len, &conn->rbuf[4]);
 
     // generating echoing response
