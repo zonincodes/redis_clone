@@ -222,7 +222,8 @@ static map<string, string> g_map;
 static uint32_t do_get(
     const vector<string> &cmd, uint8_t *res, uint32_t *reslen)
 {
-    if(!g_map.count(cmd[1])){
+    if (!g_map.count(cmd[1]))
+    {
         return RES_NX;
     }
 
@@ -241,7 +242,43 @@ static uint32_t do_set(const vector<string> &cmd, uint8_t *res, uint32_t *reslen
     return RES_OK;
 }
 
+static uint32_t do_del(
+    const vector<string> &cmd, uint8_t *res, uint32_t *reslen
+)
+{
+    (void)res;
+    (void)reslen;
+    g_map.erase(cmd[1]);
+    return RES_OK;
+}
 
+static bool cmd_is(const string &word, const char *cmd){
+    return 0 == strcasecmp(word.c_str(), cmd);
+}
+
+static int32_t do_request(const uint8_t *req, uint32_t reqlen, uint32_t *rescode, uint8_t *res, uint32_t *reslen)
+{
+    vector<string> cmd;
+    if(0 != parse_req(req, reqlen, cmd)){
+        msg("bad req");
+        return -1;
+    }
+    if(cmd.size() == 2 && cmd_is(cmd[0], "get")){
+        *rescode = do_get(cmd, res, reslen);
+    } else if( cmd.size() == 3 && cmd_is(cmd[0], "set")){
+        *rescode = do_set(cmd, res, reslen);
+    } else if(cmd.size() == 2 && cmd_is(mcmd[0], "del")){
+        *rescode = do_del(cmd, res, reslen);
+    } else {
+        // command [cmd] not recognized
+        *rescode = RES_ERR;
+        const char *msg = "Unkown cmd";
+        strcpy((char *)res, msg);
+        *reslen = strlen(msg);
+        return 0;
+    }
+    return 0;
+}
 
 static bool try_one_request(Conn *conn)
 {
