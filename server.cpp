@@ -145,6 +145,54 @@ static int32_t accept_new_conn(vector<Conn *> &fd2conn, int fd)
     return 0;
 }
 
+static void state_req(Conn *conn);
+static void state_res(Conn *conn);
+
+static bool try_one_request(Conn *conn){
+    // try to parse a request from the buffer
+    if(conn -> rbuf_size < 4){
+        // not enought data in the buffer. Will retry the next iteration.
+        return false;
+    }
+
+    uint32_t len = 0;
+    memcpy(&len, &conn ->rbuf[0], 4);
+    if(len > k_max_msg){
+        msg("too long");
+        conn -> state = STATE_END;
+        return false;
+    }
+
+    if(4 + len > conn -> rbuf_size){
+        // not enough data in the buffer. Will retry in the next iteration.
+        return false;
+    }
+
+    // got onr request, do something with it
+    printf("Client says: %. *s\n", len, & conn -> rbuf[4]);
+
+    // generating echoing response
+    memcpy(&conn -> wbuf[0], &len, 4);
+    memcpy(&conn -> wbuf[4], &conn ->rbuf[4], len);
+    conn -> wbuf_size = 4 + len;
+
+    // remove the request from the buffer.
+    // note: frequent memmove is ineffiecient.
+    // note: need better handling for production code.
+
+    size_t remain = conn -> rbuf_size - 4 - len;
+    if(remain){
+        memmove(conn -> rbuf, &conn->rbuf[4 + len], remain);
+    }
+    conn -> rbuf_size = remain;
+
+    // change state 
+    conn -> state = STATE_RES;
+    state_res(conn);
+
+    // continue the outer loop if the request was full processed
+    return (conn -> state == STATE_REQ);
+}
 
 static int32_t one_request(int connfd){
     // 4 bytes header
