@@ -189,7 +189,7 @@ static bool try_one_request(Conn *conn)
     }
 
     // got onr request, do something with it
-    printf("Client says: %. *s\n", len, &conn->rbuf[4]);
+    printf("Client says: %.*s\n", len, &conn->rbuf[4]);
 
     // generating echoing response
     memcpy(&conn->wbuf[0], &len, 4);
