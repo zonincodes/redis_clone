@@ -243,8 +243,7 @@ static uint32_t do_set(const vector<string> &cmd, uint8_t *res, uint32_t *reslen
 }
 
 static uint32_t do_del(
-    const vector<string> &cmd, uint8_t *res, uint32_t *reslen
-)
+    const vector<string> &cmd, uint8_t *res, uint32_t *reslen)
 {
     (void)res;
     (void)reslen;
@@ -252,24 +251,33 @@ static uint32_t do_del(
     return RES_OK;
 }
 
-static bool cmd_is(const string &word, const char *cmd){
+static bool cmd_is(const string &word, const char *cmd)
+{
     return 0 == strcasecmp(word.c_str(), cmd);
 }
 
 static int32_t do_request(const uint8_t *req, uint32_t reqlen, uint32_t *rescode, uint8_t *res, uint32_t *reslen)
 {
     vector<string> cmd;
-    if(0 != parse_req(req, reqlen, cmd)){
+    if (0 != parse_req(req, reqlen, cmd))
+    {
         msg("bad req");
         return -1;
     }
-    if(cmd.size() == 2 && cmd_is(cmd[0], "get")){
+    if (cmd.size() == 2 && cmd_is(cmd[0], "get"))
+    {
         *rescode = do_get(cmd, res, reslen);
-    } else if( cmd.size() == 3 && cmd_is(cmd[0], "set")){
+    }
+    else if (cmd.size() == 3 && cmd_is(cmd[0], "set"))
+    {
         *rescode = do_set(cmd, res, reslen);
-    } else if(cmd.size() == 2 && cmd_is(cmd[0], "del")){
+    }
+    else if (cmd.size() == 2 && cmd_is(cmd[0], "del"))
+    {
         *rescode = do_del(cmd, res, reslen);
-    } else {
+    }
+    else
+    {
         // command [cmd] not recognized
         *rescode = RES_ERR;
         const char *msg = "Unkown cmd";
@@ -307,15 +315,16 @@ static bool try_one_request(Conn *conn)
     // got one request, generate the response
     uint32_t rescode = 0;
     uint32_t wlen = 0;
-    int32_t err = do_request(&conn -> rbuf[4], len, &rescode, &conn -> wbuf[4+4], &wlen);
-    if(err){
+    int32_t err = do_request(&conn->rbuf[4], len, &rescode, &conn->wbuf[4 + 4], &wlen);
+    if (err)
+    {
         conn->state = STATE_END;
         return false;
     }
     wlen += 4;
-    memcpy(&conn -> wbuf[0], &wlen, 4);
+    memcpy(&conn->wbuf[0], &wlen, 4);
     memcpy(&conn->wbuf[4], &rescode, 4);
-    conn -> wbuf_size = 4 + wlen;
+    conn->wbuf_size = 4 + wlen;
 
     // remove the request from the buffer.
     // note: frequent memmove is ineffiecient.
