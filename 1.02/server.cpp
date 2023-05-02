@@ -13,9 +13,17 @@
 #include <poll.h>
 #include <string>
 #include <map>
+
+// proj
+#include "hashtable.h"
+
 using std::map;
 using std::string;
 using std::vector;
+
+#define container_of(ptr, type, member) ({ \
+    const typeof(((type *)0)->member) *__mptr = (ptr); \
+    (type *)((char *)__mptr - offsetof(type, member) ); })
 
 static void msg(const char *msg)
 {
@@ -47,58 +55,6 @@ static void fd_set_nb(int fd)
     {
         die("fcntl error");
     }
-}
-
-static void do_something(int connfd)
-{
-    char rbuf[64] = {};
-    ssize_t n = read(connfd, rbuf, sizeof(rbuf) - 1);
-
-    if (n < 0)
-    {
-        msg("read() error");
-        return;
-    }
-
-    printf("Client says: %s\n", rbuf);
-
-    char wbuf[] = "world";
-    write(connfd, wbuf, strlen(wbuf));
-}
-
-static int32_t read_full(int fd, char *buf, size_t n)
-{
-    while (n > 0)
-    {
-        ssize_t rv = read(fd, buf, n);
-        if (rv <= 0)
-        {
-            return -1; // error, or unexpected EOF
-        }
-
-        assert((size_t)rv <= n);
-        n -= (size_t)rv;
-        buf += rv;
-    }
-    return 0;
-}
-
-static int32_t write_all(int fd, const char *buf, size_t n)
-{
-    while (n > 0)
-    {
-        ssize_t rv = write(fd, buf, n);
-
-        if (rv <= 0)
-        {
-            return -1; // error
-        }
-
-        assert((size_t)rv <= n);
-        n -= (size_t)rv;
-        buf += rv;
-    }
-    return 0;
 }
 
 const size_t k_max_msg = 4096;
@@ -216,39 +172,102 @@ enum
     RES_NX = 2,
 };
 
+// tHe data structure for the key space
+static struct
+{
+    HMap db;
+} g_data;
+
+// the structure for the key
+struct Entry
+{
+    struct HNode node;
+    string key;
+    string val;
+};
+
+static bool entry_eq(HNode *lhs, HNode *rhs)
+{
+    struct Entry *le = container_of(lhs, struct Entry, node);
+    struct Entry *re = container_of(rhs, struct Entry, node);
+    return (*lhs).hcode == (*rhs).hcode && (*le).key == (*re).key;
+}
+
+static uint64_t str_hash(const uint8_t *data, size_t len)
+{
+    uint32_t h = 0x811C9DC5;
+    for (size_t i = 0; i < len; i++)
+    {
+        h = (h + data[i]) * 0x01000193;
+    }
+    return h;
+}
+
 // the data structure for the key space. This is just a placeholder
-static map<string, string> g_map;
 
 static uint32_t do_get(
-    const vector<string> &cmd, uint8_t *res, uint32_t *reslen)
+    vector<string> &cmd, uint8_t *res, uint32_t *reslen)
 {
-    if (!g_map.count(cmd[1]))
+    Entry key;
+    key.key.swap(cmd[1]);
+    key.node.hcode = str_hash((uint8_t *)key.key.data(), key.key.size());
+
+    HNode *node = hm_lookup(&g_data.db, &key.node, &entry_eq);
+    if (!node)
     {
         return RES_NX;
     }
 
-    string &val = g_map[cmd[1]];
+    const string &val = container_of(node, Entry, node)->val;
     assert(val.size() <= k_max_msg);
     memcpy(res, val.data(), val.size());
     *reslen = (uint32_t)val.size();
     return RES_OK;
 }
 
-static uint32_t do_set(const vector<string> &cmd, uint8_t *res, uint32_t *reslen)
+static uint32_t do_set(vector<string> &cmd, uint8_t *res, uint32_t *reslen)
 {
     (void)res;
     (void)reslen;
-    g_map[cmd[1]] = cmd[2];
+
+    Entry key;
+    key.key.swap(cmd[1]);
+    key.node.hcode = str_hash((uint8_t *)key.key.data(), key.key.size());
+
+    HNode *node = hm_lookup(&g_data.db, &key.node, &entry_eq);
+    if (node)
+    {
+        container_of(node, Entry, node)->val.swap(cmd[2]);
+    }
+    else
+    {
+        Entry *ent = new Entry();
+        ent->key.swap(key.key);
+        ent->node.hcode = key.node.hcode;
+        ent->val.swap(cmd[2]);
+        hm_insert(&g_data.db, &ent->node);
+    }
+
     return RES_OK;
 }
 
 static uint32_t do_del(
-    const vector<string> &cmd, uint8_t *res, uint32_t *reslen)
+    vector<string> &cmd, uint8_t *res, uint32_t *reslen)
 {
     (void)res;
     (void)reslen;
-    g_map.erase(cmd[1]);
+
+    Entry key;
+    key.key.swap(cmd[1]);
+    key.node.hcode = str_hash((uint8_t *)key.key.data(), key.key.size());
+
+    HNode *node = hm_pop(&g_data.db, &key.node, &entry_eq);
+    if (node)
+    {
+        delete container_of(node, Entry, node);
+    }
     return RES_OK;
+    ;
 }
 
 static bool cmd_is(const string &word, const char *cmd)
